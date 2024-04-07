@@ -14,6 +14,10 @@ I made one that changes all posts in a site at once with WP-CLI.
 
 # DEMO
 
+
+https://github.com/katsushi-kawamori/wp-cli-Lightbox-command-on-off/assets/165099245/f1658016-1765-45cd-b47e-0d3941745092
+
+
 # Features
 ```
 /* 1st argument: on to turn the lightbox On; off to turn the lightbox Off */
