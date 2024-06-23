@@ -2,7 +2,7 @@
 /**
  * Cli Name:    Lightbox command on off
  * Description: Switch the Lightbox On and Off for all posts and all pages at once.
- * Version:     1.03
+ * Version:     1.04
  * Author:      Katsushi Kawamori
  * Author URI:  https://riverforest-wp.info/
  * License:     GPLv2 or later
@@ -34,6 +34,9 @@
  * @since 1.00
  */
 function lightbox_command( $args ) {
+	$input_error_message = 'Please enter the arguments.' . "\n";
+	$input_error_message .= '1st argument(string) : on -> Lightbox On, off : Lightbox Off' . "\n";
+	$input_error_message .= '2nd argument(int) : Post ID or Media ID -> Process only specified IDs.' . "\n";
 	if ( is_array( $args ) && ! empty( $args ) ) {
 		$command_flag = $args[0];
 		$include_id = 0;
@@ -137,27 +140,24 @@ function lightbox_command( $args ) {
 							}
 							if ( ! empty( $result ) ) {
 								++$count;
-								echo get_the_title( $post->ID ) . '[ID:' . $post->ID . ' Type:' . $post->post_type . ' Date:' . $post->post_date . '] : ' . get_the_title( $values['id'] ) . '[ID:' . $values['id'] . ']' . "\n";
+								WP_CLI::success( get_the_title( $post->ID ) . '[ID:' . $post->ID . ' Type:' . $post->post_type . ' Date:' . $post->post_date . '] : ' . get_the_title( $values['id'] ) . '[ID:' . $values['id'] . ']' );
 							}
 						}
 					}
 				}
 			}
-			WP_CLI::success( $args[0] );
-			if ( 0 < $count ) {
-				echo sprintf( '%d converted.', $count ) . "\n";
+			if ( 1 == $count ) {
+				WP_CLI::success( sprintf( '%1$d image was converted with the lightbox effect %2$s.', $count, $args[0] ) );
+			} else if ( 1 < $count ) {
+				WP_CLI::success( sprintf( '%1$d images were converted with the lightbox effect %2$s.', $count, $args[0] ) );
 			} else {
-				echo 'None to be converted.' . "\n";
+				WP_CLI::error( 'None to be converted.' );
 			}
 		} else {
-			echo 'Please enter the arguments.' . "\n";
-			echo '1st argument(string) : on -> Lightbox On, off : Lightbox Off' . "\n";
-			echo '2nd argument(int) : Post ID or Media ID -> Process only specified IDs.' . "\n";
+			WP_CLI::error( $input_error_message );
 		}
 	} else {
-		echo 'Please enter the arguments.' . "\n";
-		echo '1st argument(string) : on -> Lightbox On, off : Lightbox Off' . "\n";
-		echo '2nd argument(int) : Post ID or Media ID -> Process only specified IDs.' . "\n";
+		WP_CLI::error( $input_error_message );
 	}
 }
 WP_CLI::add_command( 'box', 'lightbox_command' );
