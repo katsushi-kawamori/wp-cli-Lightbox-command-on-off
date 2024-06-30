@@ -2,7 +2,7 @@
 /**
  * Cli Name:    Lightbox command on off
  * Description: Switch the Lightbox On and Off for all posts and all pages at once.
- * Version:     1.04
+ * Version:     2.00
  * Author:      Katsushi Kawamori
  * Author URI:  https://riverforest-wp.info/
  * License:     GPLv2 or later
@@ -27,6 +27,196 @@
 	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
+
+/** ==================================================
+ * Search DB
+ *
+ * @return array $files  files.
+ * @since 1.10
+ */
+function lightbox_search_db_files() {
+
+	$wp_uploads = wp_upload_dir();
+
+	$upload_url = $wp_uploads['baseurl'];
+	if ( is_ssl() ) {
+		$upload_url = str_replace( 'http:', 'https:', $upload_url );
+	}
+	$upload_url  = untrailingslashit( $upload_url );
+
+	$args = array(
+		'post_type'      => 'attachment',
+		'post_mime_type' => 'image',
+		'post_status'    => 'any',
+		'posts_per_page' => -1,
+	);
+	$posts = get_posts( $args );
+
+	$files = array();
+	foreach ( $posts as $post ) {
+		$metadata = wp_get_attachment_metadata( $post->ID );
+		$path_file  = get_post_meta( $post->ID, '_wp_attached_file', true );
+		$filename   = wp_basename( $path_file );
+		$media_path = str_replace( $filename, '', $path_file );
+		$media_url  = $upload_url . '/' . $media_path;
+		$files[] = array(
+			'id' => $post->ID,
+			'size' => 'full',
+			'url' => $media_url . $filename,
+		);
+		if ( ( ! empty( $metadata ) && array_key_exists( 'sizes', $metadata ) ) ) {
+			if ( ! empty( $metadata['original_image'] ) ) {
+				$org_url = wp_get_original_image_url( $post->ID );
+				$files[] = array(
+					'id' => $post->ID,
+					'size' => 'original_image',
+					'url' => $org_url,
+				);
+			}
+
+			$thumbnails = $metadata['sizes'];
+			if ( ! empty( $thumbnails ) ) {
+				foreach ( $thumbnails as $key => $key2 ) {
+					if ( array_key_exists( 'sources', $thumbnails[ $key ] ) ) {
+						/* WP6.1 or later */
+						$sources = $thumbnails[ $key ]['sources'];
+						foreach ( $sources as $key2 => $value2 ) {
+							$url      = $media_url . $sources[ $key2 ]['file'];
+							$files[] = array(
+								'id' => $post->ID,
+								'size' => $key2,
+								'url' => $url,
+							);
+						}
+					} else {
+						$filename = $key2['file'];
+						$url      = $media_url . $key2['file'];
+						$files[] = array(
+							'id' => $post->ID,
+							'size' => $key,
+							'url' => $url,
+						);
+					}
+				}
+			}
+		}
+	}
+
+	return $files;
+}
+
+/** ==================================================
+ * Convert Block
+ *
+ * @param int    $pid  Post ID.
+ * @param string $contents  Contents.
+ * @param array  $files  Files.
+ * @since 1.10
+ */
+function lightbox_convert_block( $pid, $contents, $files ) {
+
+	$classic_contents = $contents;
+
+	/* Remove gallery block from contents */
+	preg_match_all( '/<!-- wp:gallery(.*?)\/wp:gallery -->/ims', $contents, $found_gallery_wp );
+	if ( ! empty( $found_gallery_wp[1] ) ) {
+		foreach ( $found_gallery_wp[1] as $value ) {
+			$classic_contents = str_replace( $value, '', $classic_contents );
+		}
+		$classic_contents = str_replace( '<!-- wp:gallery/wp:gallery -->', '', $classic_contents );
+	}
+
+	/* Remove image block from contents */
+	preg_match_all( '/<!-- wp:image(.*?)\/wp:image -->/ims', $contents, $found_wp );
+	if ( ! empty( $found_wp[1] ) ) {
+		foreach ( $found_wp[1] as $value ) {
+			$classic_contents = str_replace( $value, '', $classic_contents );
+		}
+		$classic_contents = str_replace( '<!-- wp:image/wp:image -->', '', $classic_contents );
+	}
+
+	/* IMG tag to Block from Classic contents */
+	if ( preg_match_all( '/<img.*?src\s*=\s*[\"|\'](.*?)[\"|\'].*?>/i', $classic_contents, $found ) !== false ) {
+		if ( ! empty( $found[1] ) ) {
+			$url_array = array_column( $files, 'url' );
+			foreach ( $found[0] as $key => $img_html ) {
+				$url = $found[1][ $key ];
+				$result = array_search( $url, $url_array );
+				if ( $result ) {
+					$html = lightbox_image_convert_block( $files[ $result ]['id'], $files[ $result ]['size'], $files[ $result ]['url'] );
+					$contents = str_replace( $img_html, $html, $contents );
+				}
+			}
+			$post_arr = array(
+				'ID' => $pid,
+				'post_content' => $contents,
+			);
+			wp_update_post( $post_arr );
+		}
+	}
+
+	/* Gallery to Block from Classic contents */
+	if ( preg_match_all( '/\[gallery(.*?)\]/ims', $classic_contents, $found ) !== false ) {
+		if ( ! empty( $found[1] ) ) {
+			$gallery_attr_arr = array();
+			foreach ( $found[0] as $key => $gallery_shortcode ) {
+				$gallery_attr_arrs = explode( ' ', $found[1][ $key ] );
+				$gallery_attr_arrs = array_values( array_filter( $gallery_attr_arrs ) );
+				foreach ( $gallery_attr_arrs as $key => $value ) {
+					$gallery_attr_arrs2 = explode( '=', $value );
+					$gallery_attr_arr[ $gallery_attr_arrs2[0] ] = str_replace( '"', '', $gallery_attr_arrs2[1] );
+				}
+				if ( ! array_key_exists( 'columns', $gallery_attr_arr ) ) {
+					$gallery_attr_arr['columns'] = 3;
+				}
+				if ( ! array_key_exists( 'size', $gallery_attr_arr ) ) {
+					$gallery_attr_arr['size'] = 'thumbnail';
+				}
+				$ids = array_map( 'intval', explode( ',', $gallery_attr_arr['ids'] ) );
+				$id_array = array_column( $files, 'id' );
+				$html = '<!-- wp:gallery {"columns":' . intval( $gallery_attr_arr['columns'] ) . ',"linkTo":"none"} -->';
+				$html .= '<figure class="wp-block-gallery has-nested-images columns-' . intval( $gallery_attr_arr['columns'] ) . ' is-cropped">';
+				foreach ( $ids as $id ) {
+					$result = array_search( $id, $id_array );
+					$html .= lightbox_image_convert_block( $id, $gallery_attr_arr['size'], $files[ $result ]['url'] );
+				}
+				$html .= '</figure><!-- /wp:gallery -->';
+				$contents = str_replace( $gallery_shortcode, $html, $contents );
+				$post_arr = array(
+					'ID' => $pid,
+					'post_content' => $contents,
+				);
+				wp_update_post( $post_arr );
+			}
+		}
+	}
+}
+
+/** ==================================================
+ * Convert img tag to Block
+ *
+ * @param int    $media_id  Media ID.
+ * @param string $media_size  Media size.
+ * @param string $media_url  Media url.
+ * @return string $html  html.
+ * @since 1.10
+ */
+function lightbox_image_convert_block( $media_id, $media_size, $media_url ) {
+
+	$attr_arr = array();
+	$attr_arr['id'] = $media_id;
+	$attr_arr['sizeSlug'] = $media_size;
+	$attr_arr['linkDestination'] = 'none';
+	$attr = wp_json_encode( $attr_arr, JSON_UNESCAPED_SLASHES );
+	$html = null;
+	$html .= '<!-- wp:image ' . $attr . ' -->';
+	$html .= '<figure class="wp-block-image size-' . $media_size . '">';
+	$html .= '<img src="' . $media_url . '" alt="" class="wp-image-' . $media_id . '"/>';
+	$html .= '</figure><!-- /wp:image -->';
+
+	return $html;
+}
+
 /** ==================================================
  * Lightbox command
  *
@@ -34,6 +224,9 @@
  * @since 1.00
  */
 function lightbox_command( $args ) {
+
+	$files = lightbox_search_db_files();
+
 	$input_error_message = 'Please enter the arguments.' . "\n";
 	$input_error_message .= '1st argument(string) : on -> Lightbox On, off : Lightbox Off' . "\n";
 	$input_error_message .= '2nd argument(int) : Post ID or Media ID -> Process only specified IDs.' . "\n";
@@ -62,6 +255,9 @@ function lightbox_command( $args ) {
 			$count = 0;
 			foreach ( $posts as $post ) {
 				$contents = $post->post_content;
+
+				lightbox_convert_block( $post->ID, $contents, $files );
+
 				if ( preg_match_all( '/<!-- wp:image(.*?)-->/ims', $contents, $found ) !== false ) {
 					if ( ! empty( $found[1] ) ) {
 						foreach ( $found[1] as $value ) {
