@@ -8,24 +8,24 @@ Since WordPress 6.4, the Lightbox feature has been added.
 
 Change the comment part of the html in the post. Specifically, add "lightbox":{"enabled":true} in wp:image.
 
-If you want to apply this to a previous site, just add this to wp:image in the html.
+Conversion from the Classic Editor is also supported.
 
 I made one that changes all posts in a site at once with WP-CLI.
-
-# DEMO
-
-
-https://github.com/katsushi-kawamori/wp-cli-Lightbox-command-on-off/assets/165099245/f1658016-1765-45cd-b47e-0d3941745092
-
 
 # Features
 ```
 /* 1st argument: on to turn the lightbox On; off to turn the lightbox Off */
 wp box on
 wp box off
-/* 2nd argument: can be an ID of a post or image */
-wp box off 9110 /* only post id 9110 Off */
-wp box on 9031 /* media id 9031 only On */
+
+1st argument(string) : on -> Lightbox On, off : Lightbox Off
+optional argument(int or string) : --exclude=1 or --exclude=1,2,3 : Post ID -> Exclude and process the specified IDs.
+optional argument(int or string) : --include=1 or --include=1,2,3 : Post ID -> Process only specified IDs.
+optional argument(string) : --size=large : Media size -> Convert to specified image size.
+
+/* sample optional argument: can be an ID of a post */
+wp box off --include=9110 /* only post id 9110 Off */
+wp box on --include=9031 /* post id 9031 only On */
 ```
 
 # Requirement

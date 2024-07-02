@@ -2,7 +2,7 @@
 /**
  * Cli Name:    Lightbox command on off
  * Description: Switch the Lightbox On and Off for all posts and all pages at once.
- * Version:     2.00
+ * Version:     3.00
  * Author:      Katsushi Kawamori
  * Author URI:  https://riverforest-wp.info/
  * License:     GPLv2 or later
@@ -32,7 +32,7 @@
  * Search DB
  *
  * @return array $files  files.
- * @since 1.10
+ * @since 2.00
  */
 function lightbox_search_db_files() {
 
@@ -108,31 +108,45 @@ function lightbox_search_db_files() {
 /** ==================================================
  * Convert Block
  *
- * @param int    $pid  Post ID.
  * @param string $contents  Contents.
+ * @param string $media_size  Media size.
  * @param array  $files  Files.
- * @since 1.10
+ * @return string $contents
+ * @since 2.00
  */
-function lightbox_convert_block( $pid, $contents, $files ) {
+function lightbox_convert_block( $contents, $media_size, $files ) {
 
 	$classic_contents = $contents;
 
 	/* Remove gallery block from contents */
-	preg_match_all( '/<!-- wp:gallery(.*?)\/wp:gallery -->/ims', $contents, $found_gallery_wp );
-	if ( ! empty( $found_gallery_wp[1] ) ) {
-		foreach ( $found_gallery_wp[1] as $value ) {
-			$classic_contents = str_replace( $value, '', $classic_contents );
+	if ( preg_match_all( '/<!-- wp:gallery(.*?)\/wp:gallery -->/ims', $contents, $found_gallery_wp ) !== false ) {
+		if ( ! empty( $found_gallery_wp[1] ) ) {
+			foreach ( $found_gallery_wp[1] as $value ) {
+				$classic_contents = str_replace( $value, '', $classic_contents );
+			}
+			$classic_contents = str_replace( '<!-- wp:gallery/wp:gallery -->', '', $classic_contents );
 		}
-		$classic_contents = str_replace( '<!-- wp:gallery/wp:gallery -->', '', $classic_contents );
 	}
 
 	/* Remove image block from contents */
-	preg_match_all( '/<!-- wp:image(.*?)\/wp:image -->/ims', $contents, $found_wp );
-	if ( ! empty( $found_wp[1] ) ) {
-		foreach ( $found_wp[1] as $value ) {
-			$classic_contents = str_replace( $value, '', $classic_contents );
+	if ( preg_match_all( '/<!-- wp:image(.*?)\/wp:image -->/ims', $contents, $found_wp ) !== false ) {
+		if ( ! empty( $found_wp[1] ) ) {
+			foreach ( $found_wp[1] as $value ) {
+				$classic_contents = str_replace( $value, '', $classic_contents );
+			}
+			$classic_contents = str_replace( '<!-- wp:image/wp:image -->', '', $classic_contents );
 		}
-		$classic_contents = str_replace( '<!-- wp:image/wp:image -->', '', $classic_contents );
+	}
+
+	/* Remove a tag for media */
+	if ( preg_match_all( '|<a href=\"(.*?)\".*?>(.*?)</a>|mis', $contents, $found_atag ) !== false ) {
+		$url_array = array_column( $files, 'url' );
+		foreach ( $found_atag[1] as $key => $url ) {
+			$result = array_search( $url, $url_array );
+			if ( is_int( $result ) ) {
+				$contents = str_replace( $found_atag[0][ $key ], $found_atag[2][ $key ], $contents );
+			}
+		}
 	}
 
 	/* IMG tag to Block from Classic contents */
@@ -143,15 +157,16 @@ function lightbox_convert_block( $pid, $contents, $files ) {
 				$url = $found[1][ $key ];
 				$result = array_search( $url, $url_array );
 				if ( $result ) {
-					$html = lightbox_image_convert_block( $files[ $result ]['id'], $files[ $result ]['size'], $files[ $result ]['url'] );
+					if ( is_null( $media_size ) ) {
+						$media_size = $files[ $result ]['size'];
+						$media_url = $files[ $result ]['url'];
+					} else {
+						list( $media_size, $media_url ) = lightbox_verify_media_size( $media_size, $files, $files[ $result ]['id'] );
+					}
+					$html = lightbox_image_convert_block( $files[ $result ]['id'], $media_size, $media_url );
 					$contents = str_replace( $img_html, $html, $contents );
 				}
 			}
-			$post_arr = array(
-				'ID' => $pid,
-				'post_content' => $contents,
-			);
-			wp_update_post( $post_arr );
 		}
 	}
 
@@ -178,18 +193,46 @@ function lightbox_convert_block( $pid, $contents, $files ) {
 				$html .= '<figure class="wp-block-gallery has-nested-images columns-' . intval( $gallery_attr_arr['columns'] ) . ' is-cropped">';
 				foreach ( $ids as $id ) {
 					$result = array_search( $id, $id_array );
-					$html .= lightbox_image_convert_block( $id, $gallery_attr_arr['size'], $files[ $result ]['url'] );
+					if ( is_null( $media_size ) ) {
+						$media_size = $gallery_attr_arr['size'];
+						$media_url = $files[ $result ]['url'];
+					} else {
+						list( $media_size, $media_url ) = lightbox_verify_media_size( $media_size, $files, $id );
+					}
+					$html .= lightbox_image_convert_block( $id, $media_size, $media_url );
 				}
 				$html .= '</figure><!-- /wp:gallery -->';
 				$contents = str_replace( $gallery_shortcode, $html, $contents );
-				$post_arr = array(
-					'ID' => $pid,
-					'post_content' => $contents,
-				);
-				wp_update_post( $post_arr );
 			}
 		}
 	}
+
+	return $contents;
+}
+
+/** ==================================================
+ * Verify media size for commandline arguments.
+ *
+ * @param string $media_size  Media size.
+ * @param array  $files  Files.
+ * @param int    $media_id  Media ID.
+ * @return array $media_size, $media_url
+ * @since 2.01
+ */
+function lightbox_verify_media_size( $media_size, $files, $media_id ) {
+
+	$id_array = array_column( $files, 'id' );
+	$result_arr = array_keys( $id_array, $media_id );
+	$media_size_arr = array();
+	foreach ( $result_arr as $key => $value ) {
+		$media_size_arr[] = $files[ $key ]['size'];
+	}
+	if ( ! in_array( $media_size, $media_size_arr ) ) {
+		$media_size = 'large';
+	}
+	$media_url = wp_get_attachment_image_url( $media_id, $media_size );
+
+	return array( $media_size, $media_url );
 }
 
 /** ==================================================
@@ -221,20 +264,32 @@ function lightbox_image_convert_block( $media_id, $media_size, $media_url ) {
  * Lightbox command
  *
  * @param array $args  arguments.
+ * @param array $assoc_args  optional arguments.
  * @since 1.00
  */
-function lightbox_command( $args ) {
+function lightbox_command( $args, $assoc_args ) {
 
 	$files = lightbox_search_db_files();
 
 	$input_error_message = 'Please enter the arguments.' . "\n";
 	$input_error_message .= '1st argument(string) : on -> Lightbox On, off : Lightbox Off' . "\n";
-	$input_error_message .= '2nd argument(int) : Post ID or Media ID -> Process only specified IDs.' . "\n";
+	$input_error_message .= 'optional argument(int or string) : --exclude=1 or --exclude=1,2,3 : Post ID -> Exclude and process the specified IDs.' . "\n";
+	$input_error_message .= 'optional argument(int or string) : --include=1 or --include=1,2,3 : Post ID -> Process only specified IDs.' . "\n";
+	$input_error_message .= 'optional argument(string) : --size=large : Media size -> Convert to specified image size.' . "\n";
+
 	if ( is_array( $args ) && ! empty( $args ) ) {
 		$command_flag = $args[0];
+		$exclude_id = 0;
 		$include_id = 0;
-		if ( array_key_exists( 1, $args ) ) {
-			$include_id = intval( $args[1] );
+		$media_size = null;
+		if ( array_key_exists( 'exclude', $assoc_args ) ) {
+			$exclude_id = $assoc_args['exclude'];
+		}
+		if ( array_key_exists( 'include', $assoc_args ) ) {
+			$include_id = $assoc_args['include'];
+		}
+		if ( array_key_exists( 'size', $assoc_args ) ) {
+			$media_size = $assoc_args['size'];
 		}
 		if ( 'on' === $command_flag || 'off' === $command_flag ) {
 			$custom_post_args = array(
@@ -246,31 +301,26 @@ function lightbox_command( $args ) {
 			$posts_args = array(
 				'post_type'      => $post_types,
 				'post_status'    => 'any',
+				'include'        => $include_id,
+				'exclude'        => $exclude_id,
 				'posts_per_page' => -1,
 				'orderby'        => 'date',
 				'order'          => 'ASC',
 			);
 			$posts = get_posts( $posts_args );
-			global $wpdb;
 			$count = 0;
 			foreach ( $posts as $post ) {
 				$contents = $post->post_content;
 
-				lightbox_convert_block( $post->ID, $contents, $files );
+				$contents = lightbox_convert_block( $contents, $media_size, $files );
 
 				if ( preg_match_all( '/<!-- wp:image(.*?)-->/ims', $contents, $found ) !== false ) {
 					if ( ! empty( $found[1] ) ) {
 						foreach ( $found[1] as $value ) {
 							$result = array();
 							$values = json_decode( $value, true );
+							$pid = false;
 							if ( $values ) {
-								$convert = true;
-								if ( 0 < $include_id ) {
-									$convert = false;
-									if ( $include_id === $post->ID || $include_id === $values['id'] ) {
-										$convert = true;
-									}
-								}
 								if ( array_key_exists( 'lightbox', $values ) ) {
 									if ( $values['lightbox']['enabled'] ) {
 										$flag = 'true';
@@ -280,61 +330,41 @@ function lightbox_command( $args ) {
 								} else {
 									$flag = 'non';
 								}
-								if ( $convert ) {
-									if ( 'on' === $command_flag ) {
-										if ( 'false' === $flag ) {
-											$values['lightbox']['enabled'] = true;
-											$value2 = wp_json_encode( $values, JSON_UNESCAPED_SLASHES );
-											$result = $wpdb->query(
-												$wpdb->prepare(
-													"
-													UPDATE {$wpdb->prefix}posts
-													SET post_content = replace( post_content, %s, %s )
-													WHERE ID = %d
-													",
-													$value,
-													' ' . $value2 . ' ',
-													$post->ID
-												)
-											);
-										} else if ( 'non' === $flag ) {
-											$values_new['lightbox']['enabled'] = true;
-											$values_new = array_merge( $values_new, $values );
-											$value2 = wp_json_encode( $values_new, JSON_UNESCAPED_SLASHES );
-											$result = $wpdb->query(
-												$wpdb->prepare(
-													"
-													UPDATE {$wpdb->prefix}posts
-													SET post_content = replace( post_content, %s, %s )
-													WHERE ID = %d
-													",
-													$value,
-													' ' . $value2 . ' ',
-													$post->ID
-												)
-											);
-										}
-									} else if ( 'off' === $command_flag ) {
-										if ( 'true' === $flag ) {
-											$values['lightbox']['enabled'] = false;
-											$value2 = wp_json_encode( $values, JSON_UNESCAPED_SLASHES );
-											$result = $wpdb->query(
-												$wpdb->prepare(
-													"
-													UPDATE {$wpdb->prefix}posts
-													SET post_content = replace( post_content, %s, %s )
-													WHERE ID = %d
-													",
-													$value,
-													' ' . $value2 . ' ',
-													$post->ID
-												)
-											);
-										}
+								if ( 'on' === $command_flag ) {
+									if ( 'false' === $flag ) {
+										$values['lightbox']['enabled'] = true;
+										$value2 = wp_json_encode( $values, JSON_UNESCAPED_SLASHES );
+										$contents = str_replace( $value, ' ' . $value2 . ' ', $contents );
+										$post_arr = array(
+											'ID' => $post->ID,
+											'post_content' => $contents,
+										);
+										$pid = wp_update_post( $post_arr );
+									} else if ( 'non' === $flag ) {
+										$values_new['lightbox']['enabled'] = true;
+										$values_new = array_merge( $values_new, $values );
+										$value2 = wp_json_encode( $values_new, JSON_UNESCAPED_SLASHES );
+										$contents = str_replace( $value, ' ' . $value2 . ' ', $contents );
+										$post_arr = array(
+											'ID' => $post->ID,
+											'post_content' => $contents,
+										);
+										$pid = wp_update_post( $post_arr );
+									}
+								} else if ( 'off' === $command_flag ) {
+									if ( 'true' === $flag ) {
+										$values['lightbox']['enabled'] = false;
+										$value2 = wp_json_encode( $values, JSON_UNESCAPED_SLASHES );
+										$contents = str_replace( $value, ' ' . $value2 . ' ', $contents );
+										$post_arr = array(
+											'ID' => $post->ID,
+											'post_content' => $contents,
+										);
+										$pid = wp_update_post( $post_arr );
 									}
 								}
 							}
-							if ( ! empty( $result ) ) {
+							if ( $pid ) {
 								++$count;
 								WP_CLI::success( get_the_title( $post->ID ) . '[ID:' . $post->ID . ' Type:' . $post->post_type . ' Date:' . $post->post_date . '] : ' . get_the_title( $values['id'] ) . '[ID:' . $values['id'] . ']' );
 							}
