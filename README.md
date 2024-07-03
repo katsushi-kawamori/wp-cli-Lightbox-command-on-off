@@ -21,7 +21,7 @@ wp box off
 1st argument(string) : on -> Lightbox On, off : Lightbox Off
 optional argument(int or string) : --exclude=1 or --exclude=1,2,3 : Post ID -> Exclude and process the specified IDs.
 optional argument(int or string) : --include=1 or --include=1,2,3 : Post ID -> Process only specified IDs.
-optional argument(string) : --size=large : Media size -> Convert to specified image size.
+optional argument(string) : --size=large : Media size -> Convert to specified image size for convert from classic editor.
 
 /* sample optional argument: can be an ID of a post */
 wp box off --include=9110 /* only post id 9110 Off */

@@ -2,7 +2,7 @@
 /**
  * Cli Name:    Lightbox command on off
  * Description: Switch the Lightbox On and Off for all posts and all pages at once.
- * Version:     3.00
+ * Version:     3.01
  * Author:      Katsushi Kawamori
  * Author URI:  https://riverforest-wp.info/
  * License:     GPLv2 or later
@@ -118,33 +118,11 @@ function lightbox_convert_block( $contents, $media_size, $files ) {
 
 	$classic_contents = $contents;
 
-	/* Remove gallery block from contents */
-	if ( preg_match_all( '/<!-- wp:gallery(.*?)\/wp:gallery -->/ims', $contents, $found_gallery_wp ) !== false ) {
-		if ( ! empty( $found_gallery_wp[1] ) ) {
-			foreach ( $found_gallery_wp[1] as $value ) {
+	/* Remove block from contents */
+	if ( preg_match_all( '/<!-- wp:(.*?)\/wp:(.*?) -->/ims', $contents, $found_block_wp ) !== false ) {
+		if ( ! empty( $found_block_wp[0] ) ) {
+			foreach ( $found_block_wp[0] as $value ) {
 				$classic_contents = str_replace( $value, '', $classic_contents );
-			}
-			$classic_contents = str_replace( '<!-- wp:gallery/wp:gallery -->', '', $classic_contents );
-		}
-	}
-
-	/* Remove image block from contents */
-	if ( preg_match_all( '/<!-- wp:image(.*?)\/wp:image -->/ims', $contents, $found_wp ) !== false ) {
-		if ( ! empty( $found_wp[1] ) ) {
-			foreach ( $found_wp[1] as $value ) {
-				$classic_contents = str_replace( $value, '', $classic_contents );
-			}
-			$classic_contents = str_replace( '<!-- wp:image/wp:image -->', '', $classic_contents );
-		}
-	}
-
-	/* Remove a tag for media */
-	if ( preg_match_all( '|<a href=\"(.*?)\".*?>(.*?)</a>|mis', $contents, $found_atag ) !== false ) {
-		$url_array = array_column( $files, 'url' );
-		foreach ( $found_atag[1] as $key => $url ) {
-			$result = array_search( $url, $url_array );
-			if ( is_int( $result ) ) {
-				$contents = str_replace( $found_atag[0][ $key ], $found_atag[2][ $key ], $contents );
 			}
 		}
 	}
@@ -203,6 +181,15 @@ function lightbox_convert_block( $contents, $media_size, $files ) {
 				}
 				$html .= '</figure><!-- /wp:gallery -->';
 				$contents = str_replace( $gallery_shortcode, $html, $contents );
+			}
+		}
+	}
+
+	/* Remove the a tag surrounding the img block */
+	if ( preg_match_all( '|<a href=\"(.*?)\".*?>(.*?)</a>|mis', $contents, $found_atag ) !== false ) {
+		foreach ( $found_atag[2] as $key => $value ) {
+			if ( str_contains( $value, '<!-- wp:image' ) ) {
+				$contents = str_replace( $found_atag[0][ $key ], $found_atag[2][ $key ], $contents );
 			}
 		}
 	}
@@ -275,7 +262,7 @@ function lightbox_command( $args, $assoc_args ) {
 	$input_error_message .= '1st argument(string) : on -> Lightbox On, off : Lightbox Off' . "\n";
 	$input_error_message .= 'optional argument(int or string) : --exclude=1 or --exclude=1,2,3 : Post ID -> Exclude and process the specified IDs.' . "\n";
 	$input_error_message .= 'optional argument(int or string) : --include=1 or --include=1,2,3 : Post ID -> Process only specified IDs.' . "\n";
-	$input_error_message .= 'optional argument(string) : --size=large : Media size -> Convert to specified image size.' . "\n";
+	$input_error_message .= 'optional argument(string) : --size=large : Media size -> Convert to specified image size for convert from classic editor.' . "\n";
 
 	if ( is_array( $args ) && ! empty( $args ) ) {
 		$command_flag = $args[0];
