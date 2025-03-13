@@ -2,7 +2,7 @@
 /**
  * Cli Name:    Lightbox command on off
  * Description: Switch the Lightbox On and Off for all posts and all pages at once.
- * Version:     3.02
+ * Version:     3.03
  * Author:      Katsushi Kawamori
  * Author URI:  https://riverforest-wp.info/
  * License:     GPLv2 or later
@@ -263,9 +263,52 @@ class LightboxCommandOnOff {
 		return $html;
 	}
 
-	/** ==================================================
-	 * box command
+	/**
+	 * Switch the Lightbox On and Off for all posts and all pages at once.
+	 * ## OPTIONS
 	 *
+	 * <string>
+	 * : on -> Lightbox On, off : Lightbox Off'
+	 *
+	 * [--exclude=<int>]
+	 * : Optional argument1 -  Post ID -> Exclude and process the specified ID.
+	 *
+	 * [--exclude=<string>]
+	 * : Optional argument1 -  Post IDs -> Exclude and process the specified IDs.
+	 *
+	 * [--include=<int>]
+	 * : Optional argument2 - Post ID -> Process only specified ID.
+	 *
+	 * [--include=<string>]
+	 * : Optional argument2 - Post IDs -> Process only specified IDs.
+	 *
+	 * [--size=<string>]
+	 * : Optional argument3 - Convert to specified image size for convert from classic editor.
+	 *
+	 * ## EXAMPLES
+	 *
+	 * wp box on
+	 * // Switch the Lightbox On for all posts and all pages.
+	 *
+	 * wp box off
+	 * // Switch the Lightbox Off for all posts and all pages.
+	 *
+	 * wp box on --exclude=1
+	 * // Exclude ID 1.
+	 *
+	 * wp box on --exclude=1,2,3
+	 * // Exclude ID 1 and 2 and 3.
+	 *
+	 * wp box on --include=1
+	 * // Only ID 1.
+	 *
+	 * wp box on --include=1,2,3
+	 * // Only ID 1 and 2 and 3.
+	 *
+	 * wp box on --size=large
+	 * // Set media size to large.
+	 *
+	 * @when after_wp_load
 	 * @param array $args  arguments.
 	 * @param array $assoc_args  optional arguments.
 	 * @since 1.00
@@ -385,8 +428,6 @@ class LightboxCommandOnOff {
 			} else {
 				WP_CLI::error( $input_error_message );
 			}
-		} else {
-			WP_CLI::error( $input_error_message );
 		}
 	}
 }
